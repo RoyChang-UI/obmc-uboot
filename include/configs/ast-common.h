@@ -96,7 +96,7 @@
 #define CONFIG_CMD_MTDPARTS
 #endif
 
-#define CONFIG_BOOTARGS			"console=ttyS4,115200n8 root=/dev/ram rw"
+#define CONFIG_BOOTARGS			"console=ttyS4,115200n8 root=/dev/ram rw mem.devmem=1"
 
 #define CONFIG_AST_SPI_NOR    /* AST SPI NOR Flash */
 #define CONFIG_FMC_CS			1
