@@ -186,6 +186,9 @@ void serial_register(struct serial_device *dev)
 #endif
 
 	dev->next = serial_devices;
+	if(dev->next) {
+		dev->next->last = dev;
+	}
 	serial_devices = dev;
 }
 
@@ -480,6 +483,33 @@ void serial_putc(const char c)
 {
 	get_current()->putc(c);
 }
+
+#ifdef CONFIG_SYS_NS16550_COM2
+int ble_serial_init(void)
+{
+	return get_current()->last->start();
+}
+
+void ble_serial_setbrg(void)
+{
+	get_current()->last->setbrg();
+}
+
+int ble_serial_getc(void)
+{
+	return get_current()->last->getc();
+}
+
+int ble_serial_tstc(void)
+{
+	return get_current()->last->tstc();
+}
+
+void ble_serial_putc(const char c)
+{
+	get_current()->last->putc(c);
+}
+#endif
 
 /**
  * serial_puts() - Output string via currently selected serial port

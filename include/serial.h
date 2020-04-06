@@ -18,6 +18,7 @@ struct serial_device {
 	void	(*loop)(int);
 #endif
 	struct serial_device	*next;
+	struct serial_device	*last;
 };
 
 void default_serial_puts(const char *s);
