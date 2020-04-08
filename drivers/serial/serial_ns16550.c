@@ -183,15 +183,66 @@ serial_setbrg_dev(unsigned int dev_index)
 	_serial_setbrg(dev_index);
 }
 
+// UI: For BLE UART
+static void _serial_setbrg_2(const int port)
+{
+	int clock_divisor;
+
+	clock_divisor = ns16550_calc_divisor(PORT, CONFIG_SYS_NS16550_CLK,
+					     gd->baudrate);
+	NS16550_reinit_2(PORT, clock_divisor);
+}
+static inline void
+serial_setbrg_dev_2(unsigned int dev_index)
+{
+	_serial_setbrg_2(dev_index);
+}
+static int eserial_2_init(void)
+{
+	int clock_divisor;
+	clock_divisor = ns16550_calc_divisor(serial_ports[1], CONFIG_SYS_NS16550_CLK, gd->baudrate);
+	NS16550_init_2(serial_ports[1], clock_divisor);
+	return 0;
+}
+static void eserial_2_setbrg(void)
+{
+	serial_setbrg_dev_2(2);
+}
+static int eserial_2_getc(void)
+{
+	return serial_getc_dev(2);
+}
+static int eserial_2_tstc(void)
+{
+	return serial_tstc_dev(2);
+}
+static void eserial_2_putc(const char c)
+{
+	serial_putc_dev(2, c);
+}
+static void eserial_2_puts(const char *s)
+{
+	serial_puts_dev(2, s);
+}
+
+
 #if defined(CONFIG_SYS_NS16550_COM1)
 DECLARE_ESERIAL_FUNCTIONS(1);
 struct serial_device eserial1_device =
 	INIT_ESERIAL_STRUCTURE(1, "eserial0");
 #endif
 #if defined(CONFIG_SYS_NS16550_COM2)
-DECLARE_ESERIAL_FUNCTIONS(2);
 struct serial_device eserial2_device =
-	INIT_ESERIAL_STRUCTURE(2, "eserial1");
+{
+	.name	= "eserial1",
+	.start	= eserial_2_init,
+	.stop	= NULL,
+	.setbrg	= eserial_2_setbrg,
+	.getc	= eserial_2_getc,
+	.tstc	= eserial_2_tstc,
+	.putc	= eserial_2_putc,
+	.puts	= eserial_2_puts,
+};
 #endif
 #if defined(CONFIG_SYS_NS16550_COM3)
 DECLARE_ESERIAL_FUNCTIONS(3);

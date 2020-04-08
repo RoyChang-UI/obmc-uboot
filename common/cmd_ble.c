@@ -140,7 +140,7 @@ static void ble_hexdump_recv_data(int maxcount)
 		BLE_DEBUG("the count of characters to be printed exceed maximum limit %d\n", sizeof(print_buf));
 		return;
 	}
-printf("==> ble_hexdump_recv_data: maxcount=%d\n", maxcount);
+
 	while(cnt < maxcount)
 	{
 		p[cnt]=(uint8_t) ble_serial_getc();
@@ -308,6 +308,7 @@ static void ble_bcsp_initialize(void)
 
 	/* State = garrulous */
 	BLE_DEBUG("### State is garrulous\n");
+	printf("[%s] BCSP Initialization done.\n", __func__);
 }
 
 static void ble_bcsp_send_hci_packet(ble_hci_command_t *cmd, int use_crc, int print_recv_bytes)
@@ -430,6 +431,7 @@ static void ble_bccmd_set_mac_addr(void)
 
 	BLE_DEBUG("### Send 'transport_write CSR_VARID_WARM_RESET'\n");
 	ble_bcsp_send_hci_packet(&write_warm_reset_cmd, 1, 0);
+	printf("[%s] BCCMD Set MAC Address done.\n", __func__);
 }
 
 static void ble_csr8811_start_adv(void)
@@ -528,7 +530,7 @@ static void ble_csr8811_start_adv(void)
 	ble_bcsp_send_hci_packet(&adv_data_cmd, 1, 1);
 
 	BLE_DEBUG("### Send 'LE_Set_Scan_Responce_Data'\n");
-	sprintf(buf, "Unifi-Server-%02X%02X%02X", ble_eth_mac[3],ble_eth_mac[4],ble_eth_mac[5]);
+	sprintf(buf, "LTU-Wave-%02X%02X%02X", ble_eth_mac[3],ble_eth_mac[4],ble_eth_mac[5]);
 	memcpy(&(scan_resp_data_cmd.command[BLE_SHORTENED_LOCAL_NAME_OFFSET_IN_SCAN_RESPONSE_DATA]), buf, 15);
 	ble_bcsp_send_hci_packet(&scan_resp_data_cmd, 1, 1);
 
@@ -537,6 +539,97 @@ static void ble_csr8811_start_adv(void)
 
 	BLE_DEBUG("### Send 'LE_Set_Advertise_Enable'\n");
 	ble_bcsp_send_hci_packet(&adv_enable_cmd, 1, 1);
+	printf("[%s] Start Advertising done.\n", __func__);
+}
+
+static void ble_bccmd_set_26MHz(void)
+{
+	printf("[%s] Set ANA Frequecy\n", __func__);
+	// send bcsp packet with verdor-specific HCI commands to set 25MHz similar to the following command :
+	// bccmd -t bcsp -b 115200 -d /dev/ttyAMA1 psload -r /lib/firmware/CSR8811/pb-207-csr8x11-rev4-115200.psr
+	//
+	// 25MHz freq setting in firmware file
+	// &01fe = 6590
+	// &03c3 = 0001
+	// &2579 = 0000
+	// &0246 = 0000
+	// &0229 = 0000
+	// &0217 = 0000
+	// &02fc = 0000
+	//
+	// Loading PSKEY_ANA_FREQ ... csr_write_bcsp: varid=0x00007003, length=8
+	ble_hci_command_t any_freq_cmd = {
+		.opcode= {0x00,0xfc},
+		.size = 0x13, 
+		.command = {0xc2,0x02,0x00,0x09,0x00,0x00,0x00,0x03,0x70,0x00,0x00,0xfe,0x01,0x01,0x00,0x08,0x00,0x90,0x65}
+	};
+	// Loading PSKEY_DEEP_SLEEP_USE_EXTERNAL_CLOCK ... csr_write_bcsp: varid=0x00007003, length=8
+	ble_hci_command_t use_ext_clock_cmd = {
+		.opcode= {0x00,0xfc},
+		.size = 0x13,
+		.command = {0xc2,0x02,0x00,0x09,0x00,0x01,0x00,0x03,0x70,0x00,0x00,0xc3,0x03,0x01,0x00,0x08,0x00,0x01,0x00}
+	};
+	// Loading 0x2579 ... csr_write_bcsp: varid=0x00007003, length=8
+	ble_hci_command_t set_2579_cmd = {
+		.opcode= {0x00,0xfc},
+		.size = 0x13,
+		.command = {0xc2,0x02,0x00,0x09,0x00,0x02,0x00,0x03,0x70,0x00,0x00,0x79,0x25,0x01,0x00,0x08,0x00,0x00,0x00}
+	};
+	// Loading PSKEY_CLOCK_REQUEST_ENABLE ... csr_write_bcsp: varid=0x00007003, length=8
+	ble_hci_command_t clock_request_enable_cmd = {
+		.opcode= {0x00,0xfc},
+		.size = 0x13,
+		.command = {0xc2,0x02,0x00,0x09,0x00,0x03,0x00,0x03,0x70,0x00,0x00,0x46,0x02,0x01,0x00,0x08,0x00,0x00,0x00}
+	};
+	// Loading PSKEY_DEEP_SLEEP_STATE ... csr_write_bcsp: varid=0x00007003, length=8
+	ble_hci_command_t deep_sleep_state_cmd = {
+		.opcode= {0x00,0xfc},
+		.size = 0x13,
+		.command = {0xc2,0x02,0x00,0x09,0x00,0x04,0x00,0x03,0x70,0x00,0x00,0x29,0x02,0x01,0x00,0x08,0x00,0x00,0x00}
+	};
+	// Loading PSKEY_TX_OFFSET_HALF_MHZ ... csr_write_bcsp: varid=0x00007003, length=8
+	ble_hci_command_t tx_offset_half_mhz_cmd = {
+		.opcode= {0x00,0xfc},
+		.size = 0x13,
+		.command = {0xc2,0x02,0x00,0x09,0x00,0x05,0x00,0x03,0x70,0x00,0x00,0x17,0x02,0x01,0x00,0x08,0x00,0x00,0x00}
+	};
+	// Loading 0x02fc ... csr_write_bcsp: varid=0x00007003, length=8
+	ble_hci_command_t set_02fc_cmd = {
+		.opcode= {0x00,0xfc},
+		.size = 0x13,
+		.command = {0xc2,0x02,0x00,0x09,0x00,0x06,0x00,0x03,0x70,0x00,0x00,0xfc,0x02,0x01,0x00,0x08,0x00,0x00,0x00}
+	};
+	// warm_reset command , csr_write_bcsp: varid=0x00004002, length=0
+	ble_hci_command_t warm_reset_cmd = {
+		.opcode= {0x00,0xfc},
+		.size = 0x13,
+		.command = {0xc2,0x02,0x00,0x09,0x00,0x07,0x00,0x02,0x40,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}
+	};
+
+	BLE_DEBUG("### Send 'csr_write_bcsp PSKEY_ANA_FREQ'\n");
+	ble_bcsp_send_hci_packet(&any_freq_cmd, 1, 1);
+
+	BLE_DEBUG("### Send 'csr_write_bcsp PSKEY_DEEP_SLEEP_USE_EXTERNAL_CLOCK'\n");
+	ble_bcsp_send_hci_packet(&use_ext_clock_cmd, 1, 1);
+
+	BLE_DEBUG("### Send 'csr_write_bcsp 0x2579'\n");
+	ble_bcsp_send_hci_packet(&set_2579_cmd, 1, 1);
+
+	BLE_DEBUG("### Send 'csr_write_bcsp PSKEY_CLOCK_REQUEST_ENABLE'\n");
+	ble_bcsp_send_hci_packet(&clock_request_enable_cmd, 1, 1);
+
+	BLE_DEBUG("### Send 'csr_write_bcsp PSKEY_DEEP_SLEEP_STATE'\n");
+	ble_bcsp_send_hci_packet(&deep_sleep_state_cmd, 1, 1);
+
+	BLE_DEBUG("### Send 'csr_write_bcsp PSKEY_TX_OFFSET_HALF_MHZ'\n");
+	ble_bcsp_send_hci_packet(&tx_offset_half_mhz_cmd, 1, 1);
+
+	BLE_DEBUG("### Send 'csr_write_bcsp 0x02fc'\n");
+	ble_bcsp_send_hci_packet(&set_02fc_cmd, 1, 1);
+
+	BLE_DEBUG("### Send 'csr_write_bcsp CSR_VARID_WARM_RESET'\n");
+	ble_bcsp_send_hci_packet(&warm_reset_cmd, 1, 0);
+	printf("[%s] Set ANA Frequecy done.\n", __func__);
 }
 
 
@@ -560,10 +653,10 @@ static int do_ble(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
 
 	ble_gpio_reset();
 	ble_bcsp_initialize();
-//	ble_bccmd_set_25MHz();
+	ble_bccmd_set_26MHz();
 
 	mdelay(100);
-//	ble_bcsp_initialize();
+	ble_bcsp_initialize();
 	ble_bccmd_set_mac_addr();
 
 	mdelay(100);

@@ -144,6 +144,18 @@ static void NS16550_setbrg(NS16550_t com_port, int baud_divisor)
 	serial_out(UART_LCRVAL, &com_port->lcr);
 }
 
+static void NS16550_setbrg_2(NS16550_t com_port, int baud_divisor)
+{
+	int value = 0;
+
+	value = UART_LCR_BKSE | UART_LCR_EPS | UART_LCR_PEN | UART_LCRVAL;
+	serial_out(value, &com_port->lcr);
+	serial_out(baud_divisor & 0xff, &com_port->dll);
+	serial_out((baud_divisor >> 8) & 0xff, &com_port->dlm);
+	value = UART_LCR_EPS | UART_LCR_PEN | UART_LCRVAL;
+	serial_out(value, &com_port->lcr);
+}
+
 void NS16550_init(NS16550_t com_port, int baud_divisor)
 {
 #if (defined(CONFIG_SPL_BUILD) && \
@@ -183,6 +195,29 @@ void NS16550_init(NS16550_t com_port, int baud_divisor)
 #if defined(CONFIG_SOC_KEYSTONE)
 	serial_out(UART_REG_VAL_PWREMU_MGMT_UART_ENABLE, &com_port->regC);
 #endif
+}
+
+void NS16550_init_2(NS16550_t com_port, int baud_divisor)
+{
+	while (!(serial_in(&com_port->lsr) & UART_LSR_TEMT))
+		;
+
+	serial_out(CONFIG_SYS_NS16550_IER, &com_port->ier);
+	serial_out(UART_MCRVAL, &com_port->mcr);
+	serial_out(UART_FCRVAL, &com_port->fcr);
+
+	if (baud_divisor != -1)
+		NS16550_setbrg_2(com_port, baud_divisor);
+
+}
+
+void NS16550_reinit_2(NS16550_t com_port, int baud_divisor)
+{
+	serial_out(CONFIG_SYS_NS16550_IER, &com_port->ier);
+	NS16550_setbrg(com_port, 0);
+	serial_out(UART_MCRVAL, &com_port->mcr);
+	serial_out(UART_FCRVAL, &com_port->fcr);
+	NS16550_setbrg_2(com_port, baud_divisor);
 }
 
 #ifndef CONFIG_NS16550_MIN_FUNCTIONS
