@@ -20,7 +20,7 @@
 #define CONFIG_BLE_RESET_PIN 2
 
 #ifdef CONFIG_BLE_DEBUG
-	#define BLE_DEBUG(format, args...) printf("[%s:%d] "format, __FILE__, __LINE__, ##args)
+	#define BLE_DEBUG(format, args...) printf("[%s:%d] "format, __func__, __LINE__, ##args)
 	#define BLE_HEXDUMP(buf,size) ble_hexdump(buf, size)
 	#define BLE_HEXDUMP_RECV_DATA(x) ble_hexdump_recv_data(x)
 #else
@@ -41,6 +41,9 @@
 #define BLE_SHORTENED_LOCAL_NAME_OFFSET_IN_SCAN_RESPONSE_DATA 3
 #define BLE_MAC_SERVICE_OFFSET_IN_SCAN_RESPONSE_DATA         10
 
+#define RCV_BUF_SIZE		256
+#define DELAY_TIME		5
+
 // LTU-Wave's Bluetooth UUID
 //.uuid_factory_default = "7e9c3518-4ac2-4352-ab07-a3e8a5752324",
 //.uuid_user_configured = "b0e402c7-143f-4486-b371-20405c8b14a2",
@@ -53,8 +56,8 @@ typedef struct BLE_hci_command {
 	uint8_t command[48];
 } ble_hci_command_t;
 
-// for example, BLE0=7E:83:C2:9F:95:3A
-uint8_t ble_eth_mac[6] = { 0x7E, 0x83, 0xC2, 0x9F, 0x95, 0x3A };
+// for example, BLE0=AA:BB:CC:11:33:55
+uint8_t ble_eth_mac[6] = { 0xAA, 0xBB, 0xCC, 0x11, 0x33, 0x55 };
 // MAC0 (ath0) address in EEPROM, target baord's MAC Address, which will be set to the uuid 0x252a service data 'Serial Number String' of advertising data
 uint8_t ath0_eth_mac[6] = { 0x74, 0x83, 0xC2, 0x9F, 0x95, 0x3A };
 /* Reliable packet sequence number - used to assign seq to each rel pkt. */
@@ -130,7 +133,7 @@ static void ble_hexdump(const unsigned char *buf, size_t size)
 	}
 }
 
-uint8_t print_buf[2048];
+uint8_t print_buf[4096];
 static void ble_hexdump_recv_data(int maxcount)
 {
 	int cnt=0;
@@ -232,7 +235,7 @@ static void ble_gpio_reset(void)
 
 static void ble_bcsp_initialize(void)
 {
-	printf("[%s] BCSP Initialization\n", __func__);
+	printf("=== BCSP Initialization ===\n");
 	uint8_t bcsp_sync_pkt[10] = {0xc0,0x00,0x41,0x00,0xbe,0xda,0xdc,0xed,0xed,0xc0};
 	uint8_t bcsp_conf_pkt[10] = {0xc0,0x00,0x41,0x00,0xbe,0xad,0xef,0xac,0xed,0xc0};
 	uint8_t bcsp_sync_resp_pkt[10] = {0xc0,0x00,0x41,0x00,0xbe,0xac,0xaf,0xef,0xee,0xc0};
@@ -246,69 +249,56 @@ static void ble_bcsp_initialize(void)
 	// kick watchdog , LTU got around 8 seconds for hardware watchdog timeout
 	WATCHDOG_RESET();
 	
-	BLE_DEBUG("### BCSP link establishment\n");
-	for(j=0; j<20; j++) // CSR8811 got auto uart baud rate detection
+	printf("###### BCSP link establishment ######\n");
+	for(j=0; j<10; j++) // CSR8811 got auto uart baud rate detection
 	{
-		//BLE_DEBUG("Start to send sync packet\n");
-		mdelay(5);
+		BLE_DEBUG(" Start to send SYNC packet\n");
 		for(i=0; i<sizeof(bcsp_sync_pkt); i++) {
 			ble_serial_putc(bcsp_sync_pkt[i]);
 		}
+		mdelay(DELAY_TIME);
 	}
 
-	/* sync packet received mostly : bcspsync[4] = {0xda, 0xdc, 0xed, 0xed};
-	   few sync responses received :  bcspsyncresp[4] = {0xac,0xaf,0xef,0xee};
-	*/
+	// sync packet received mostly : bcspsync[4] = {0xda, 0xdc, 0xed, 0xed};
+	// few sync responses received :  bcspsyncresp[4] = {0xac,0xaf,0xef,0xee};
+	BLE_HEXDUMP_RECV_DATA(RCV_BUF_SIZE);
 
-	// let's wait for 160 characters output, 
-	// 160 bytes * 11 (1 start bit + 8 data bits + 1 even parity bit + 1 stop bit)= 1760 bits
-	// if 921600 bps is used, 1760 / 921600 bps = 0.001909722 = 1.9 ms
-	// if 115200 bps is used, 1760 / 115200 bps = 0.0153      = 15.3 ms
-	mdelay(15); // for 115200 bps, passed
-	BLE_HEXDUMP_RECV_DATA(400);
-
-	BLE_DEBUG("### Start to send sync resp packet\n");
+	BLE_DEBUG(" Start to send SYNC-RESP packet\n");
 	for(i=0; i<sizeof(bcsp_sync_resp_pkt); i++) {
 		ble_serial_putc(bcsp_sync_resp_pkt[i]);
 	}
 
+	// conf packets received mostly : bcspconf[4] = {0xad,0xef,0xac,0xed};
+	// very very few sync packets received : bcspsync[4] = {0xda, 0xdc, 0xed, 0xed};
+	mdelay(DELAY_TIME);
+	BLE_HEXDUMP_RECV_DATA(RCV_BUF_SIZE);
 
-	/* conf packets received mostly : bcspconf[4] = {0xad,0xef,0xac,0xed};
-	   very very few sync packets received : bcspsync[4] = {0xda, 0xdc, 0xed, 0xed};
-	 */
-	mdelay(15); // for 115200 bps
-	BLE_HEXDUMP_RECV_DATA(400);
-
-	BLE_DEBUG("### State is curious\n");
-	/* State = curious */
-
-	BLE_DEBUG("### Start to send conf packet\n");
+	printf("\n===== Curious State =====\n");
+	BLE_DEBUG(" Start to send CONF packet\n");
 	for(i=0; i<sizeof(bcsp_conf_pkt); i++) {
 		ble_serial_putc(bcsp_conf_pkt[i]);
 	}
 
-	mdelay(15); // for 115200 bps
-	/* conf packets received mostly : bcspconf[4] = {0xad,0xef,0xac,0xed}; */
-	/* one conf resp packets received : bcspconfresp[4] = {0xde,0xad,0xd0,0xd0}; */
-	BLE_HEXDUMP_RECV_DATA(400);
+	// conf packets received mostly : bcspconf[4] = {0xad,0xef,0xac,0xed};
+	// one conf resp packets received : bcspconfresp[4] = {0xde,0xad,0xd0,0xd0};
+	mdelay(DELAY_TIME);
+	BLE_HEXDUMP_RECV_DATA(RCV_BUF_SIZE);
 
-	BLE_DEBUG("### Start to send conf response packet\n");
+	BLE_DEBUG(" Start to send CONF-RESP packet\n");
 	for(i=0; i<sizeof(bcsp_conf_resp_pkt); i++) {
 		ble_serial_putc(bcsp_conf_resp_pkt[i]);
 	}
 
-	mdelay(15); // for 115200 bps
-	/* continue to send the following characters 
-	   0xc0 0xdb 0xdc 0x65 0x00 0xda 0x0f 0x04 0x00 0x01 0x00 0x00 0x11 0xda 0xc0 
-	   0xc0 0xdb 0xdc 0x65 0x00 0xda 0x0f 0x04 0x00 0x01 0x00 0x00 0x11 0xda 0xc0 
-	   0xc0 0xdb 0xdc 0x65 0x00 0xda 0x0f 0x04 0x00 0x01 0x00 0x00 0x11 0xda 0xc0 
-	   ....
-	*/
-	BLE_HEXDUMP_RECV_DATA(400);
+	mdelay(DELAY_TIME);
+	// continue to send the following characters 
+	// 0xc0 0xdb 0xdc 0x65 0x00 0xda 0x0f 0x04 0x00 0x01 0x00 0x00 0x11 0xda 0xc0 
+	// 0xc0 0xdb 0xdc 0x65 0x00 0xda 0x0f 0x04 0x00 0x01 0x00 0x00 0x11 0xda 0xc0 
+	// 0xc0 0xdb 0xdc 0x65 0x00 0xda 0x0f 0x04 0x00 0x01 0x00 0x00 0x11 0xda 0xc0 
+	// ....
+	BLE_HEXDUMP_RECV_DATA(RCV_BUF_SIZE);
 
-	/* State = garrulous */
-	BLE_DEBUG("### State is garrulous\n");
-	printf("[%s] BCSP Initialization done.\n", __func__);
+	printf("\n===== Garrulous State =====\n");
+	printf("=== BCSP Initialization done ===\n");
 }
 
 static void ble_bcsp_send_hci_packet(ble_hci_command_t *cmd, int use_crc, int print_recv_bytes)
@@ -413,8 +403,8 @@ static void ble_bccmd_set_mac_addr(void)
 		//{.opcode= {0x0,0xfc}, .size = 0x13, .command = {0xc2,0x2,0x0,0x9,0x0,0x2,0x0,0x2,0x40,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0}},
 	};
 
-	BLE_DEBUG("### Send 'transport_read CSR_VARID_PS_SIZE'\n");
-	ble_bcsp_send_hci_packet(&read_ps_size_cmd, 1, 1);
+	BLE_DEBUG(" Send 'transport_read CSR_VARID_PS_SIZE'\n");
+	ble_bcsp_send_hci_packet(&read_ps_size_cmd, 1, 0);
 
 	// based on 'csr_bcsp.c' dumped log, we receive one more reliable packet, 
 	// add one to 'rxseq_txack' to avoid adding uart receiving code
@@ -426,10 +416,10 @@ static void ble_bccmd_set_mac_addr(void)
 	write_ps_cmd.command[BD_ADDR_3_OFFSET_IN_BCCMD_SET_BD_ADDR_CMD] = ble_eth_mac[3];
 	write_ps_cmd.command[BD_ADDR_4_OFFSET_IN_BCCMD_SET_BD_ADDR_CMD] = ble_eth_mac[4];
 	write_ps_cmd.command[BD_ADDR_5_OFFSET_IN_BCCMD_SET_BD_ADDR_CMD] = ble_eth_mac[5];
-	BLE_DEBUG("### Send 'transport_write CSR_VARID_PS'\n");
+	BLE_DEBUG(" Send 'transport_write CSR_VARID_PS'\n");
 	ble_bcsp_send_hci_packet(&write_ps_cmd, 1, 1);
 
-	BLE_DEBUG("### Send 'transport_write CSR_VARID_WARM_RESET'\n");
+	BLE_DEBUG(" Send 'transport_write CSR_VARID_WARM_RESET'\n");
 	ble_bcsp_send_hci_packet(&write_warm_reset_cmd, 1, 0);
 	printf("[%s] BCCMD Set MAC Address done.\n", __func__);
 }
@@ -468,6 +458,7 @@ static void ble_csr8811_start_adv(void)
 		             0x66,0x53,0x82,0x9c,0x4b,0xa3,0x09,0x16,0x2a,0x25,0x74,0x83,0xc2,0x9f,0x95,0x3a, \
 		            }
 	};
+
 	/*LE_Set_Scan_Responce_Data OGF=8 OCF=9 OPCODE=0x2009 */
 	ble_hci_command_t scan_resp_data_cmd = {
 		.opcode= {0x09,0x20},
@@ -481,10 +472,11 @@ static void ble_csr8811_start_adv(void)
 		// [   26.199521] enqueue:00000010: 46 39 35 33 41 00 00 00 00 00 00 00 00 00 00 00  F953A...........
 		// [   26.199530] enqueue:00000020: 00 00 00                                         ...
 		.size = 0x20,
-		.command = {                0x11,0x10,0x08,0x4c,0x54,0x55,0x2d,0x57,0x61,0x76,0x65,0x2d,0x39, \
+		.command = { 0x11,0x10,0x08,0x4c,0x54,0x55,0x2d,0x57,0x61,0x76,0x65,0x2d,0x39, \
 		             0x46,0x39,0x35,0x33,0x41,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, \
 		             0x00,0x00,0x00}
 	};
+
 	/*LE_Set_Advertising_Parameters OGF=8 OCF=6 OPCODE=0x2006 */
 	ble_hci_command_t adv_param_cmd = {
 		.opcode= {0x6,0x20},
@@ -509,6 +501,7 @@ static void ble_csr8811_start_adv(void)
 			.command = {0xa0,0x00,0xa0,0x00,0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x07,0x00}
 		#endif
 	};
+
 	/*LE_Set_Advertise_Enable OGF=8 OCF=10 OPCODE=0x200A */
 	ble_hci_command_t adv_enable_cmd = {
 		.opcode= {0xa,0x20},
@@ -530,7 +523,7 @@ static void ble_csr8811_start_adv(void)
 	ble_bcsp_send_hci_packet(&adv_data_cmd, 1, 1);
 
 	BLE_DEBUG("### Send 'LE_Set_Scan_Responce_Data'\n");
-	sprintf(buf, "LTU-Wave-%02X%02X%02X", ble_eth_mac[3],ble_eth_mac[4],ble_eth_mac[5]);
+	sprintf(buf, "LTU-Wave-%02X%02X%02X", ble_eth_mac[3], ble_eth_mac[4], ble_eth_mac[5]);
 	memcpy(&(scan_resp_data_cmd.command[BLE_SHORTENED_LOCAL_NAME_OFFSET_IN_SCAN_RESPONSE_DATA]), buf, 15);
 	ble_bcsp_send_hci_packet(&scan_resp_data_cmd, 1, 1);
 
@@ -541,10 +534,10 @@ static void ble_csr8811_start_adv(void)
 	ble_bcsp_send_hci_packet(&adv_enable_cmd, 1, 1);
 	printf("[%s] Start Advertising done.\n", __func__);
 }
-
+/*
 static void ble_bccmd_set_26MHz(void)
 {
-	printf("[%s] Set ANA Frequecy\n", __func__);
+	printf("=== Set ANA Frequecy ===\n");
 	// send bcsp packet with verdor-specific HCI commands to set 25MHz similar to the following command :
 	// bccmd -t bcsp -b 115200 -d /dev/ttyAMA1 psload -r /lib/firmware/CSR8811/pb-207-csr8x11-rev4-115200.psr
 	//
@@ -558,47 +551,54 @@ static void ble_bccmd_set_26MHz(void)
 	// &02fc = 0000
 	//
 	// Loading PSKEY_ANA_FREQ ... csr_write_bcsp: varid=0x00007003, length=8
-	ble_hci_command_t any_freq_cmd = {
+	ble_hci_command_t ana_freq_cmd = {
 		.opcode= {0x00,0xfc},
-		.size = 0x13, 
+		.size = 0x13,
 		.command = {0xc2,0x02,0x00,0x09,0x00,0x00,0x00,0x03,0x70,0x00,0x00,0xfe,0x01,0x01,0x00,0x08,0x00,0x90,0x65}
 	};
+
 	// Loading PSKEY_DEEP_SLEEP_USE_EXTERNAL_CLOCK ... csr_write_bcsp: varid=0x00007003, length=8
 	ble_hci_command_t use_ext_clock_cmd = {
 		.opcode= {0x00,0xfc},
 		.size = 0x13,
 		.command = {0xc2,0x02,0x00,0x09,0x00,0x01,0x00,0x03,0x70,0x00,0x00,0xc3,0x03,0x01,0x00,0x08,0x00,0x01,0x00}
 	};
+
 	// Loading 0x2579 ... csr_write_bcsp: varid=0x00007003, length=8
 	ble_hci_command_t set_2579_cmd = {
 		.opcode= {0x00,0xfc},
 		.size = 0x13,
 		.command = {0xc2,0x02,0x00,0x09,0x00,0x02,0x00,0x03,0x70,0x00,0x00,0x79,0x25,0x01,0x00,0x08,0x00,0x00,0x00}
 	};
+
 	// Loading PSKEY_CLOCK_REQUEST_ENABLE ... csr_write_bcsp: varid=0x00007003, length=8
 	ble_hci_command_t clock_request_enable_cmd = {
 		.opcode= {0x00,0xfc},
 		.size = 0x13,
 		.command = {0xc2,0x02,0x00,0x09,0x00,0x03,0x00,0x03,0x70,0x00,0x00,0x46,0x02,0x01,0x00,0x08,0x00,0x00,0x00}
 	};
+
 	// Loading PSKEY_DEEP_SLEEP_STATE ... csr_write_bcsp: varid=0x00007003, length=8
 	ble_hci_command_t deep_sleep_state_cmd = {
 		.opcode= {0x00,0xfc},
 		.size = 0x13,
 		.command = {0xc2,0x02,0x00,0x09,0x00,0x04,0x00,0x03,0x70,0x00,0x00,0x29,0x02,0x01,0x00,0x08,0x00,0x00,0x00}
 	};
+
 	// Loading PSKEY_TX_OFFSET_HALF_MHZ ... csr_write_bcsp: varid=0x00007003, length=8
 	ble_hci_command_t tx_offset_half_mhz_cmd = {
 		.opcode= {0x00,0xfc},
 		.size = 0x13,
 		.command = {0xc2,0x02,0x00,0x09,0x00,0x05,0x00,0x03,0x70,0x00,0x00,0x17,0x02,0x01,0x00,0x08,0x00,0x00,0x00}
 	};
+
 	// Loading 0x02fc ... csr_write_bcsp: varid=0x00007003, length=8
 	ble_hci_command_t set_02fc_cmd = {
 		.opcode= {0x00,0xfc},
 		.size = 0x13,
 		.command = {0xc2,0x02,0x00,0x09,0x00,0x06,0x00,0x03,0x70,0x00,0x00,0xfc,0x02,0x01,0x00,0x08,0x00,0x00,0x00}
 	};
+
 	// warm_reset command , csr_write_bcsp: varid=0x00004002, length=0
 	ble_hci_command_t warm_reset_cmd = {
 		.opcode= {0x00,0xfc},
@@ -607,10 +607,10 @@ static void ble_bccmd_set_26MHz(void)
 	};
 
 	BLE_DEBUG("### Send 'csr_write_bcsp PSKEY_ANA_FREQ'\n");
-	ble_bcsp_send_hci_packet(&any_freq_cmd, 1, 1);
+	ble_bcsp_send_hci_packet(&ana_freq_cmd, 1, 0);
 
 	BLE_DEBUG("### Send 'csr_write_bcsp PSKEY_DEEP_SLEEP_USE_EXTERNAL_CLOCK'\n");
-	ble_bcsp_send_hci_packet(&use_ext_clock_cmd, 1, 1);
+	ble_bcsp_send_hci_packet(&use_ext_clock_cmd, 1, 0);
 
 	BLE_DEBUG("### Send 'csr_write_bcsp 0x2579'\n");
 	ble_bcsp_send_hci_packet(&set_2579_cmd, 1, 1);
@@ -629,8 +629,96 @@ static void ble_bccmd_set_26MHz(void)
 
 	BLE_DEBUG("### Send 'csr_write_bcsp CSR_VARID_WARM_RESET'\n");
 	ble_bcsp_send_hci_packet(&warm_reset_cmd, 1, 0);
-	printf("[%s] Set ANA Frequecy done.\n", __func__);
+	printf("=== Set ANA Frequecy done ===\n");
 }
+*/
+static void ble_bccmd_set_26MHz(void)
+{
+	printf("=== Set ANA Frequecy ===\n");
+	// send bcsp packet with verdor-specific HCI commands to set 25MHz similar to the following command :
+	// bccmd -t bcsp -b 115200 -d /dev/ttyAMA1 psload -r /lib/firmware/CSR8811/pb-207-csr8x11-rev4-115200.psr
+	//
+	// 25MHz freq setting in firmware file
+	// &01fe = 6590
+	// &03c3 = 0001
+	// &2579 = 0000
+	// &0246 = 0000
+	// &0229 = 0000
+	// &0217 = 0000
+	// &02fc = 0000
+	//
+
+	// Loading PSKEY_HCI_LMP_LOCAL_VERSION ... csr_write_bcsp: varid=0x00007003, length=8
+	ble_hci_command_t lmp_local_ver_cmd = {
+		.opcode= {0x00,0xfc},
+		.size = 0x13,
+		.command = {0xc2,0x02,0x00,0x09,0x00,0x00,0x00,0x03,0x70,0x00,0x00,0x0d,0x01,0x01,0x00,0x08,0x00,0x08,0x08}
+	};
+
+	// Loading PSKEY_HCI_LMP_REMOTE_VERSION ... csr_write_bcsp: varid=0x00007003, length=8
+	ble_hci_command_t lmp_remote_ver_cmd = {
+		.opcode= {0x00,0xfc},
+		.size = 0x13,
+		.command = {0xc2,0x02,0x00,0x09,0x00,0x01,0x00,0x03,0x70,0x00,0x00,0x0e,0x01,0x01,0x00,0x08,0x00,0x08,0x00}
+	};
+
+	// Loading PSKEY_ANA_FREQ ... csr_write_bcsp: varid=0x00007003, length=8
+	ble_hci_command_t ana_freq_cmd = {
+		.opcode= {0x00,0xfc},
+		.size = 0x13,
+		.command = {0xc2,0x02,0x00,0x09,0x00,0x02,0x00,0x03,0x70,0x00,0x00,0xfe,0x01,0x01,0x00,0x08,0x00,0x90,0x65}
+	};
+
+	// Loading PSKEY_HOST_INTERFACE ... csr_write_bcsp: varid=0x00007003, length=8
+	ble_hci_command_t host_itfc_cmd = {
+		.opcode= {0x00,0xfc},
+		.size = 0x13,
+		.command = {0xc2,0x02,0x00,0x09,0x00,0x03,0x00,0x03,0x70,0x00,0x00,0xf9,0x01,0x01,0x00,0x08,0x00,0x01,0x00}
+	};
+
+	// Loading 0x01ea ... csr_write_bcsp: varid=0x00007003, length=8
+	ble_hci_command_t set_01ea_cmd = {
+		.opcode= {0x00,0xfc},
+		.size = 0x15,
+		.command = {0xc2,0x02,0x00,0x0a,0x00,0x04,0x00,0x03,0x70,0x00,0x00,0xea,0x01,0x02,0x00,0x08,0x00,0x01,0x00,0x00,0xc2}
+	};
+
+	// warm_reset command , csr_write_bcsp: varid=0x00004002, length=0
+	ble_hci_command_t warm_reset_cmd = {
+		.opcode= {0x00,0xfc},
+		.size = 0x13,
+		.command = {0xc2,0x02,0x00,0x09,0x00,0x05,0x00,0x02,0x40,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}
+	};
+
+	BLE_DEBUG("### Send 'csr_write_bcsp PSKEY_HCI_LMP_LOCAL_VERSION'\n");
+	ble_bcsp_send_hci_packet(&lmp_local_ver_cmd, 1, 0);
+
+	BLE_DEBUG("### Send 'csr_write_bcsp PSKEY_HCI_LMP_REMOTE_VERSION'\n");
+	ble_bcsp_send_hci_packet(&lmp_remote_ver_cmd, 1, 0);
+
+	BLE_DEBUG("### Send 'csr_write_bcsp PSKEY_ANA_FREQ'\n");
+	ble_bcsp_send_hci_packet(&ana_freq_cmd, 1, 0);
+
+	BLE_DEBUG("### Send 'csr_write_bcsp PSKEY_HOST_INTERFACE'\n");
+	ble_bcsp_send_hci_packet(&host_itfc_cmd, 1, 0);
+
+	BLE_DEBUG("### Send 'csr_write_bcsp 0x01ea'\n");
+	ble_bcsp_send_hci_packet(&set_01ea_cmd, 1, 1);
+
+	BLE_DEBUG("### Send 'csr_write_bcsp CSR_VARID_WARM_RESET'\n");
+	ble_bcsp_send_hci_packet(&warm_reset_cmd, 1, 0);
+	printf("=== Set ANA Frequecy done ===\n");
+}
+
+static void ble_read_mac_addr(void)
+{
+	// before setting bluetooth MAC address via bccmd, the default bluetooth MAC address is 'Device address: 00:02:5B:00:A5:A5'
+	//OGF=0x4 OCF=0x09 OPCODE=0x1009 for Read_BD_ADDR
+	ble_hci_command_t read_cmd = { .opcode= {0x09,0x10}, .size = 0x0 , .command = { } };
+	BLE_DEBUG("###  Send 'Read BD_ADDR'\n");
+	ble_bcsp_send_hci_packet(&read_cmd, 1, 1);
+};
+
 
 
 static int do_ble(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
@@ -653,6 +741,7 @@ static int do_ble(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
 
 	ble_gpio_reset();
 	ble_bcsp_initialize();
+
 	ble_bccmd_set_26MHz();
 
 	mdelay(100);

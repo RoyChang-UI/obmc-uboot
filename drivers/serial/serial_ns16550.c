@@ -192,11 +192,12 @@ static void _serial_setbrg_2(const int port)
 					     gd->baudrate);
 	NS16550_reinit_2(PORT, clock_divisor);
 }
-static inline void
-serial_setbrg_dev_2(unsigned int dev_index)
+
+static inline void serial_setbrg_dev_2(unsigned int dev_index)
 {
 	_serial_setbrg_2(dev_index);
 }
+
 static int eserial_2_init(void)
 {
 	int clock_divisor;
@@ -204,6 +205,7 @@ static int eserial_2_init(void)
 	NS16550_init_2(serial_ports[1], clock_divisor);
 	return 0;
 }
+
 static void eserial_2_setbrg(void)
 {
 	serial_setbrg_dev_2(2);
@@ -224,7 +226,6 @@ static void eserial_2_puts(const char *s)
 {
 	serial_puts_dev(2, s);
 }
-
 
 #if defined(CONFIG_SYS_NS16550_COM1)
 DECLARE_ESERIAL_FUNCTIONS(1);

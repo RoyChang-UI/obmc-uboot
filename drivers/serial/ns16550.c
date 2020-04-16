@@ -21,7 +21,12 @@ DECLARE_GLOBAL_DATA_PTR;
 		     UART_MCR_RTS)		/* RTS/DTR */
 #define UART_FCRVAL (UART_FCR_FIFO_EN |	\
 		     UART_FCR_RXSR |	\
-		     UART_FCR_TXSR)		/* Clear & enable FIFOs */
+		     UART_FCR_TXSR | UART_FCR_TRIGGER_8)		/* Clear & enable FIFOs */
+
+#define UART_BLE_LCRVAL		UART_LCRVAL | UART_LCR_PEN | UART_LCR_EPS
+#define UART_BLE_MCRVAL		0
+#define UART_BLE_FCRVAL		UART_FCR_FIFO_EN | UART_FCR_RXSR | UART_FCR_TXSR | UART_FCR_TRIGGER_8
+#define UART_BLE_IERVAL		UART_IER_RDI | UART_IER_RLSI 
 
 #ifndef CONFIG_DM_SERIAL
 #ifdef CONFIG_SYS_NS16550_PORT_MAPPED
@@ -148,11 +153,11 @@ static void NS16550_setbrg_2(NS16550_t com_port, int baud_divisor)
 {
 	int value = 0;
 
-	value = UART_LCR_BKSE | UART_LCR_EPS | UART_LCR_PEN | UART_LCRVAL;
+	value = UART_LCR_BKSE | UART_BLE_LCRVAL;
 	serial_out(value, &com_port->lcr);
 	serial_out(baud_divisor & 0xff, &com_port->dll);
 	serial_out((baud_divisor >> 8) & 0xff, &com_port->dlm);
-	value = UART_LCR_EPS | UART_LCR_PEN | UART_LCRVAL;
+	value = UART_BLE_LCRVAL;
 	serial_out(value, &com_port->lcr);
 }
 
@@ -202,10 +207,9 @@ void NS16550_init_2(NS16550_t com_port, int baud_divisor)
 	while (!(serial_in(&com_port->lsr) & UART_LSR_TEMT))
 		;
 
-	serial_out(CONFIG_SYS_NS16550_IER, &com_port->ier);
-	serial_out(UART_MCRVAL, &com_port->mcr);
-	serial_out(UART_FCRVAL, &com_port->fcr);
-
+	serial_out(UART_BLE_IERVAL, &com_port->ier);
+	serial_out(UART_BLE_MCRVAL, &com_port->mcr);
+	serial_out(UART_BLE_FCRVAL, &com_port->fcr);
 	if (baud_divisor != -1)
 		NS16550_setbrg_2(com_port, baud_divisor);
 
@@ -213,10 +217,10 @@ void NS16550_init_2(NS16550_t com_port, int baud_divisor)
 
 void NS16550_reinit_2(NS16550_t com_port, int baud_divisor)
 {
-	serial_out(CONFIG_SYS_NS16550_IER, &com_port->ier);
+	serial_out(UART_BLE_IERVAL, &com_port->ier);
 	NS16550_setbrg(com_port, 0);
-	serial_out(UART_MCRVAL, &com_port->mcr);
-	serial_out(UART_FCRVAL, &com_port->fcr);
+	serial_out(UART_BLE_MCRVAL, &com_port->mcr);
+	serial_out(UART_BLE_FCRVAL, &com_port->fcr);
 	NS16550_setbrg_2(com_port, baud_divisor);
 }
 

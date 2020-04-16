@@ -22,6 +22,12 @@
 /* Ethernet */
 #define CONFIG_LIB_RAND
 #define CONFIG_ASPEEDNIC
+#define CONFIG_MAC2_ENABLE
+#define CONFIG_CMD_BLE
+#ifdef CONFIG_CMD_BLE
+    #define CONFIG_SYS_NS16550_COM2		AST_UART2_BASE
+    #define CONFIG_SERIAL2			1
+#endif
 
 /* platform.S settings */
 #define	CONFIG_DRAM_ECC_SIZE		0x10000000
